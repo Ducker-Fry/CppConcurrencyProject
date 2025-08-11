@@ -12,7 +12,6 @@
 /*
 粗颗粒度的线程安全队列，采用全局互斥锁和条件变量实现
 */
-
 template<typename T>
 class ThreadSafeQueue
 {
@@ -110,3 +109,77 @@ public:
         return queue_.size(); // 返回队列的大小
     }
 };
+
+/*
+还是全局锁，但是使用std::shared_ptr来管理队列元素，
+*/
+namespace ThreadSafeQueueWithSharedPtr
+{
+    template<typename T>
+    class ThreadSafeQueue
+    {
+    private:
+        mutable std::mutex mutex_;
+        std::condition_variable wait_condition_;
+        std::queue<std::shared_ptr<T>> queue_;
+
+    public:
+        ThreadSafeQueue() = default;
+        ThreadSafeQueue(const ThreadSafeQueue&) = delete;
+        ThreadSafeQueue& operator=(const ThreadSafeQueue&) = delete;
+
+        void wait_and_pop(T& value)
+        {
+            std::unique_lock<std::mutex> lock(mutex_);
+            wait_condition_.wait(lock, [this] { return !queue_.empty(); });
+            value = std::move(*queue_.front());
+            queue_.pop();
+        }
+
+        bool try_pop(T& value)
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (queue_.empty())
+                return false;
+            value = std::move(*queue_.front());
+            queue_.pop();
+            return true;
+        }
+
+        std::shared_ptr<T> try_pop()
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (queue_.empty())
+                return nullptr;
+            auto value = queue_.front();
+            queue_.pop();
+            return value;
+        }
+
+        std::shared_ptr<T> wait_and_pop()
+        {
+            std::unique_lock<std::mutex> lock(mutex_);
+            wait_condition_.wait(lock, [this] { return !queue_.empty(); });
+            auto value = queue_.front();
+            queue_.pop();
+            return value;
+        }
+
+        void push(T value)
+        {
+            std::shared_ptr<T> ptr = std::make_shared<T>(std::move(value));
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                queue_.push(ptr);
+            }
+            wait_condition_.notify_one();
+        }
+
+        bool empty() const
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            return queue_.empty();
+        }
+    };
+};
+
