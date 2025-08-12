@@ -2,33 +2,58 @@
 #include<thread>
 #include<condition_variable>
 #include<queue>
+#include <memory>
+#include <chrono>
+
 
 /*
-Õâ¸öÍ·ÎÄ¼şÖ÷ÒªÊµÏÖÒ»ÏµÁĞ´Ö¿ÅÁ£¶ÈµÄÏß³Ì°²È«¶ÓÁĞ£¬ÎªºóÃæ
-µÄ¶àÏß³Ì±à³ÌÌá¹©»ù´¡ÉèÊ©¡£
+è¿™ä¸ªå¤´æ–‡ä»¶ä¸»è¦å®ç°ä¸€ç³»åˆ—ç²—é¢—ç²’åº¦çš„çº¿ç¨‹å®‰å…¨é˜Ÿåˆ—ï¼Œä¸ºåé¢
+çš„å¤šçº¿ç¨‹ç¼–ç¨‹æä¾›åŸºç¡€è®¾æ–½ã€‚
 */
 
+//å®šä¹‰çº¿ç¨‹å®‰å…¨é˜Ÿåˆ—çš„æŠ½è±¡æ¥å£
+// æŠ½è±¡æ¥å£ï¼šæ¨¡æ¿åŸºç±»
+template <typename T>
+class AbstractThreadSafeQueue {
+public:
+    // ç¦æ­¢æ‹·è´ï¼ˆçº¿ç¨‹å®‰å…¨å¯¹è±¡é€šå¸¸ä¸å¯æ‹·è´ï¼‰
+    AbstractThreadSafeQueue(const AbstractThreadSafeQueue&) = delete;
+    AbstractThreadSafeQueue& operator=(const AbstractThreadSafeQueue&) = delete;
+
+    AbstractThreadSafeQueue() = default;
+    virtual ~AbstractThreadSafeQueue() = default;  // è™šææ„å‡½æ•°ï¼Œç¡®ä¿æ´¾ç”Ÿç±»ææ„è¢«è°ƒç”¨
+
+    // æ ¸å¿ƒæ¥å£ï¼šçº¯è™šå‡½æ•°
+    virtual void push(T value) = 0;  // å…¥é˜Ÿï¼ˆå³å€¼å¼•ç”¨ï¼Œæ”¯æŒç§»åŠ¨ï¼‰
+    virtual bool try_pop(T& value) = 0;  // å°è¯•å‡ºé˜Ÿï¼ˆéé˜»å¡ï¼Œå¤±è´¥è¿”å›falseï¼‰
+    virtual std::shared_ptr<T> try_pop() = 0;  // å°è¯•å‡ºé˜Ÿï¼ˆè¿”å›æ™ºèƒ½æŒ‡é’ˆï¼‰
+    virtual void wait_and_pop(T& value) = 0;  // é˜»å¡ç­‰å¾…å‡ºé˜Ÿ
+    virtual std::shared_ptr<T> wait_and_pop() = 0;  // é˜»å¡ç­‰å¾…å‡ºé˜Ÿï¼ˆè¿”å›æ™ºèƒ½æŒ‡é’ˆï¼‰
+    virtual bool empty() const = 0;  // æ£€æŸ¥é˜Ÿåˆ—æ˜¯å¦ä¸ºç©º
+    virtual size_t size() const = 0;  // è·å–é˜Ÿåˆ—å¤§å°
+};
+
 
 /*
-´Ö¿ÅÁ£¶ÈµÄÏß³Ì°²È«¶ÓÁĞ£¬²ÉÓÃÈ«¾Ö»¥³âËøºÍÌõ¼ş±äÁ¿ÊµÏÖ
+ç²—é¢—ç²’åº¦çš„çº¿ç¨‹å®‰å…¨é˜Ÿåˆ—ï¼Œé‡‡ç”¨å…¨å±€äº’æ–¥é”å’Œæ¡ä»¶å˜é‡å®ç°
 */
 template<typename T>
-class ThreadSafeQueue
+class ThreadSafeQueue : public AbstractThreadSafeQueue<T>
 {
 private:
-    std::queue<T> queue_; // ´æ´¢Êı¾İµÄ¶ÓÁĞ
-    mutable std::mutex mutex_; // »¥³âËø£¬±£»¤¶ÓÁĞ
-    std::condition_variable cond_var_; // Ìõ¼ş±äÁ¿£¬ÓÃÓÚÍ¨ÖªµÈ´ıÏß³Ì
+    std::queue<T> queue_; // å­˜å‚¨æ•°æ®çš„é˜Ÿåˆ—
+    mutable std::mutex mutex_; // äº’æ–¥é”ï¼Œä¿æŠ¤é˜Ÿåˆ—
+    std::condition_variable cond_var_; // æ¡ä»¶å˜é‡ï¼Œç”¨äºé€šçŸ¥ç­‰å¾…çº¿ç¨‹
 public:
-    //¹¹ÔìºÍÎö¹¹º¯Êı
+    //æ„é€ å’Œææ„å‡½æ•°
     ThreadSafeQueue() = default;
     ~ThreadSafeQueue() = default;
 
-    // ½ûÖ¹¿½±´¹¹ÔìºÍ¸³Öµ
+    // ç¦æ­¢æ‹·è´æ„é€ å’Œèµ‹å€¼
     ThreadSafeQueue(const ThreadSafeQueue&) = delete;
     ThreadSafeQueue& operator=(const ThreadSafeQueue&) = delete;
 
-    //ÔÊĞíÒÆ¶¯¹¹ÔìºÍ¸³Öµ
+    //å…è®¸ç§»åŠ¨æ„é€ å’Œèµ‹å€¼
     ThreadSafeQueue(ThreadSafeQueue&& other) noexcept
     {
         std::lock_guard<std::mutex> lock(other.mutex_);
@@ -44,79 +69,79 @@ public:
         return *this;
     }
 
-    //¹«¹²³ÉÔ±º¯Êı
-    // Ìí¼ÓÔªËØµ½¶ÓÁĞ
+    //å…¬å…±æˆå‘˜å‡½æ•°
+    // æ·»åŠ å…ƒç´ åˆ°é˜Ÿåˆ—
     void push(T value)
     {
         std::lock_guard<std::mutex> lock(mutex_);
         queue_.push(std::move(value));
-        cond_var_.notify_one(); // Í¨ÖªÒ»¸öµÈ´ıÏß³Ì
+        cond_var_.notify_one(); // é€šçŸ¥ä¸€ä¸ªç­‰å¾…çº¿ç¨‹
     }
 
-    // ´Ó¶ÓÁĞÖĞ»ñÈ¡ÔªËØ
+    // ä»é˜Ÿåˆ—ä¸­è·å–å…ƒç´ 
     bool try_pop(T& value)
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (queue_.empty()) {
-            return false; // ¶ÓÁĞÎª¿Õ
+            return false; // é˜Ÿåˆ—ä¸ºç©º
         }
         value = std::move(queue_.front());
         queue_.pop();
-        return true; // ³É¹¦»ñÈ¡ÔªËØ
+        return true; // æˆåŠŸè·å–å…ƒç´ 
     }
 
     std::shared_ptr<T> try_pop()
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (queue_.empty()) {
-            return nullptr; // ¶ÓÁĞÎª¿Õ
+            return nullptr; // é˜Ÿåˆ—ä¸ºç©º
         }
         auto value = std::make_shared<T>(std::move(queue_.front()));
         queue_.pop();
-        return value; // ³É¹¦»ñÈ¡ÔªËØ
+        return value; // æˆåŠŸè·å–å…ƒç´ 
     }
 
-    // ×èÈûµØ»ñÈ¡ÔªËØ£¬Èç¹û¶ÓÁĞÎª¿ÕÔòµÈ´ı
+    // é˜»å¡åœ°è·å–å…ƒç´ ï¼Œå¦‚æœé˜Ÿåˆ—ä¸ºç©ºåˆ™ç­‰å¾…
     bool wait_and_pop(T& value)
     {
         std::unique_lock<std::mutex> lock(mutex_);
-        cond_var_.wait(lock, [this] { return !queue_.empty(); }); // µÈ´ıÖ±µ½¶ÓÁĞ²»Îª¿Õ
+        cond_var_.wait(lock, [this] { return !queue_.empty(); }); // ç­‰å¾…ç›´åˆ°é˜Ÿåˆ—ä¸ä¸ºç©º
         value = std::move(queue_.front());
         queue_.pop();
-        return true; // ³É¹¦»ñÈ¡ÔªËØ
+        return true; // æˆåŠŸè·å–å…ƒç´ 
     }
 
     std::shared_ptr<T> wait_and_pop()
     {
         std::unique_lock<std::mutex> lock(mutex_);
-        cond_var_.wait(lock, [this] { return !queue_.empty(); }); // µÈ´ıÖ±µ½¶ÓÁĞ²»Îª¿Õ
+        cond_var_.wait(lock, [this] { return !queue_.empty(); }); // ç­‰å¾…ç›´åˆ°é˜Ÿåˆ—ä¸ä¸ºç©º
         auto value = std::make_shared<T>(std::move(queue_.front()));
         queue_.pop();
-        return value; // ³É¹¦»ñÈ¡ÔªËØ
+        return value; // æˆåŠŸè·å–å…ƒç´ 
     }
 
-    // ¼ì²é¶ÓÁĞÊÇ·ñÎª¿Õ
+    // æ£€æŸ¥é˜Ÿåˆ—æ˜¯å¦ä¸ºç©º
     bool empty() const
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        return queue_.empty(); // ·µ»Ø¶ÓÁĞÊÇ·ñÎª¿Õ
+        return queue_.empty(); // è¿”å›é˜Ÿåˆ—æ˜¯å¦ä¸ºç©º
     }
 
-    // »ñÈ¡¶ÓÁĞµÄ´óĞ¡
+    // è·å–é˜Ÿåˆ—çš„å¤§å°
     std::size_t size() const
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        return queue_.size(); // ·µ»Ø¶ÓÁĞµÄ´óĞ¡
+        return queue_.size(); // è¿”å›é˜Ÿåˆ—çš„å¤§å°
     }
 };
 
 /*
-»¹ÊÇÈ«¾ÖËø£¬µ«ÊÇÊ¹ÓÃstd::shared_ptrÀ´¹ÜÀí¶ÓÁĞÔªËØ£¬
+è¿˜æ˜¯å…¨å±€é”ï¼Œä½†æ˜¯ä½¿ç”¨std::shared_ptræ¥ç®¡ç†é˜Ÿåˆ—å…ƒç´ ï¼Œ
 */
 namespace ThreadSafeQueueWithSharedPtr
 {
     template<typename T>
-    class ThreadSafeQueue
+    class ThreadSafeQueue : public AbstractThreadSafeQueue<T>
     {
     private:
         mutable std::mutex mutex_;
@@ -179,6 +204,12 @@ namespace ThreadSafeQueueWithSharedPtr
         {
             std::lock_guard<std::mutex> lock(mutex_);
             return queue_.empty();
+        }
+
+        size_t size() const
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            return queue_.size();
         }
     };
 };
