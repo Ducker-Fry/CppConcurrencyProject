@@ -9,9 +9,10 @@ void test()
     std::cout << "Test function called." << std::endl;
 }
 
-void test_threadsafequeue_global_mutex()
+template<typename T>
+void test_threadsafequeue_global_mutex(AbstractThreadSafeQueue<T>& queue_)
 {
-    ThreadSafeQueue<int> queue;
+    AbstractThreadSafeQueue queue = queue_;
     std::vector<std::thread> producer(5);
     std::vector<std::thread> consumer(5);
 

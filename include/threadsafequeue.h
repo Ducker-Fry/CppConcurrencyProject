@@ -75,7 +75,8 @@ public:
     {
         std::lock_guard<std::mutex> lock(mutex_);
         queue_.push(std::move(value));
-        cond_var_.notify_one(); // 通知一个等待线程
+        cond_var_.notify_all(); // 通知等待线程有新元素可用
+        //至于为什么不用notify_one()，因为如果wait_and_pop()线程抛出异常，那么刚push进来的元素仍停留在队列中，等待处理。
     }
 
     // 从队列中获取元素
@@ -102,13 +103,12 @@ public:
     }
 
     // 阻塞地获取元素，如果队列为空则等待
-    bool wait_and_pop(T& value)
+    void wait_and_pop(T& value)
     {
         std::unique_lock<std::mutex> lock(mutex_);
         cond_var_.wait(lock, [this] { return !queue_.empty(); }); // 等待直到队列不为空
         value = std::move(queue_.front());
         queue_.pop();
-        return true; // 成功获取元素
     }
 
     std::shared_ptr<T> wait_and_pop()
@@ -213,4 +213,108 @@ namespace ThreadSafeQueueWithSharedPtr
         }
     };
 };
+
+namespace ThreadSafeQueueLinkedList
+{
+    template<typename T>
+    class ThreadSafeQueue : public AbstractThreadSafeQueue<T>
+    {
+    private:
+        struct Node
+        {
+            T data;
+            std::unique_ptr<Node> next;
+            Node(T value) : data(std::move(value)), next(nullptr) {}
+            Node() : next(nullptr) {} // 默认构造函数用于dummy节点
+        };
+        std::unique_ptr<Node> head_; //将头节点视为dummy节点，避免头尾指向同一节点的情况
+        Node* tail_;
+        std::condition_variable cond_var_;
+        mutable std::mutex mutex_;
+
+    public:
+        ThreadSafeQueue()
+            : head_(std::make_unique<Node>()), tail_(head_.get()) // 初始化头节点
+        {
+        }
+        ~ThreadSafeQueue() = default;
+
+        ThreadSafeQueue(const ThreadSafeQueue&) = delete;
+        ThreadSafeQueue& operator=(const ThreadSafeQueue&) = delete;
+
+        void push(T value) override
+        {
+            auto new_node = std::make_unique<Node>(std::move(value));
+            Node* new_tail = new_node.get();
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                tail_->next = std::move(new_node);
+                tail_ = new_tail; // 更新尾指针
+            }
+            cond_var_.notify_one(); // 通知等待线程有新元素可用
+        }
+
+        std::shared_ptr<T> try_pop() override
+        {
+            // 若head->next为nullptr，说明队列无实际数据（只有dummy节点）
+            if (!head_->next)
+            {
+                return nullptr;
+            }
+
+            // 获取头节点的下一个节点（实际数据节点）
+            std::unique_ptr<Node> old_head_next = std::move(head_->next);
+            // 提取数据（用shared_ptr返回，延长数据生命周期）
+            std::shared_ptr<T> res = std::make_shared<T>(std::move(old_head_next->data));
+
+            // 更新head指向old_head_next->next（即新的头节点的next）
+            head_->next = std::move(old_head_next->next);
+
+            // 若移动后head->next为nullptr（队列变空），更新tail指向head（dummy节点）
+            if (!head_->next)
+            {
+                tail_ = head_.get();
+            }
+
+            return res;
+        }
+
+        bool try_pop(T& value) override
+        {
+            throw std::runtime_error("dangerous operation ,use std::shared_ptr<T> instead");
+        }
+
+        std::shared_ptr<T> wait_and_pop() override
+        {
+            std::unique_lock<std::mutex> lock(mutex_);
+            cond_var_.wait(lock, [this] { return head_->next != nullptr; }); // 等待直到有元素
+            return try_pop(); // 调用try_pop获取元素
+        }
+
+        void wait_and_pop(T& value) override
+        {
+            throw std::runtime_error("use std::shared_ptr instead");
+        }
+
+        bool empty() const override
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            return head_->next == nullptr; // 只有dummy节点时队列为空
+        }
+
+        size_t size() const override
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            size_t count = 0;
+            Node* current = head_.get();
+            while (current->next)
+            {
+                count++;
+                current = current->next.get();
+            }
+            return count;
+        }
+    };
+}
+
 
