@@ -1,14 +1,13 @@
 #include<iostream>
 #include"test.h"
 
-
 int main() 
 {
     // Call the test function to demonstrate its functionality.
     test();
+    test_bounded_threadsafequeue();
 
-    // Call the test for the ThreadSafeQueue with global mutex.
-    test_threadsafequeue_global_mutex();
+    std::cout << "Test completed successfully." << std::endl;
     // Indicate successful execution of the program.
     return 0;
 }
