@@ -18,7 +18,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 
 # 将源代码添加到此项目的可执行文件。
-add_executable (app   "src/test.cpp" "main.cpp" "include/threadsafestack.h" "include/queuefactory.h" "include/abstract_threadsafe_queue.h" "include/threadsafe_linked_queue.h" "include/bounded_threadsafe_queue.h" "include/threadsafe_outstream.h" "src/threadsafe_outstream.cpp")
+add_executable (app   "src/test.cpp" "main.cpp" "include/threadsafestack.h" "include/queuefactory.h" "include/abstract_threadsafe_queue.h" "include/threadsafe_linked_queue.h" "include/bounded_threadsafe_queue.h" "include/threadsafe_outstream.h" "src/threadsafe_outstream.cpp" "include/lock_free_queue.h" "include/thread_safe_priority_queue.h")
 target_link_directories(app PRIVATE "${CMAKE_SOURCE_DIR}/exec")
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
