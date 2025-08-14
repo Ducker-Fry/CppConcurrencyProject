@@ -3,8 +3,6 @@
 #include<vector>
 #include"threadsafe_outstream.h"
 
-// 全局线程安全输出流
-ThreadSafeOutputStream safe_cout(std::cout);
 
 void test()
 {
@@ -80,7 +78,10 @@ void test_bounded_threadsafequeue()
             for (int j = 0; j < 10; ++j)
             {
                 bounded_queue.push(i * 10 + j);
-                safe_cout << "Produced: " << (i * 10 + j) << std::endl;
+                {
+                    BufFlusher flusher; // 确保线程退出前刷新缓冲区
+                    bufferd_out("Producer ", i, " produced: ", (i * 10 + j), "\n");
+                }
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
             });
@@ -94,7 +95,8 @@ void test_bounded_threadsafequeue()
                 auto value = bounded_queue.wait_and_pop();
                 if (value)
                 {
-                    safe_cout << "Consumer " << i << " consumed: " << *value << std::endl;
+                    BufFlusher flusher; // 确保线程退出前刷新缓冲区
+                    bufferd_out("Consumer ", i, " consumed: ", *value, "\n");
                 }
             }
             });
