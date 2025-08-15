@@ -252,6 +252,8 @@ public:
         {
             add_to_non_empty(local_queue_.get());
         }
+
+        global_cond_.notify_one();  // 通知等待的消费者
     }
 
     void push(T&& value)
@@ -268,6 +270,8 @@ public:
         {
             add_to_non_empty(local_queue_.get());
         }
+
+        global_cond_.notify_one();  // 通知等待的消费者
     }
 
     // 非阻塞弹出元素

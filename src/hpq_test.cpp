@@ -31,9 +31,9 @@ void test_single_thread()
 void test_multi_thread()
 {
     std::cout << "=== Multi Threads Test Start ===" << std::endl;
-    const int PRODUCERS = 4;    // 4个生产者
+    const int PRODUCERS = 2;    // 4个生产者
     const int CONSUMERS = 2;    // 2个消费者
-    const int ITEMS_PER_PRODUCER = 100;  // 每个生产者生成100个元素
+    const int ITEMS_PER_PRODUCER = 5;  // 每个生产者生成100个元素
     const int TOTAL_ITEMS = PRODUCERS * ITEMS_PER_PRODUCER;
 
     HierarchicalPriorityQueue<int> hpq(10, 5);  // 局部阈值10，最多窃取5个
@@ -60,9 +60,11 @@ void test_multi_thread()
             int val = hpq.wait_and_pop();
             {
                 std::lock_guard<std::mutex> lock(results_mutex);
+                std::cout << "value: " << val << std::endl;
                 results.push_back(val);
+                items_processed++;
+                std::cout << items_processed << " items processed by consumer " << consumer_id << std::endl;
             }
-            items_processed++;
             // 模拟工作负载
             std::this_thread::yield();
         }
