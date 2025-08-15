@@ -28,7 +28,7 @@ struct ThreadLocalQueue
     // 推送元素并更新非空状态
     void push(const T& value)
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard<std::recursive_mutex> lock(mutex);
         bool was_empty = queue.empty();
         queue.push(value);
         if (was_empty)
@@ -39,7 +39,7 @@ struct ThreadLocalQueue
 
     void push(T&& value)
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard<std::recursive_mutex> lock(mutex);
         bool was_empty = queue.empty();
         queue.push(std::move(value));
         if (was_empty)
@@ -51,7 +51,7 @@ struct ThreadLocalQueue
     // 尝试弹出一个元素
     std::optional<T> try_pop()
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard<std::recursive_mutex> lock(mutex);
         if (queue.empty())
         {
             is_non_empty.store(false, std::memory_order_release);
@@ -72,7 +72,7 @@ struct ThreadLocalQueue
     // 批量窃取元素,将最多max_steal个元素移动到target队列中
     size_t steal(QueueType& target, size_t max_steal)
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard<std::recursive_mutex> lock(mutex);
         if (queue.empty())
         {
             is_non_empty.store(false, std::memory_order_release);
@@ -104,7 +104,7 @@ struct ThreadLocalQueue
     // 合并到目标队列
     void merge_to(QueueType& target)
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard<std::recursive_mutex> lock(mutex);
         while (!queue.empty())
         {
             target.push(queue.top());
@@ -115,7 +115,7 @@ struct ThreadLocalQueue
 
     std::size_t size()
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard<std::recursive_mutex> lock(mutex);
         if (!is_non_empty)
         {
             return 0;
@@ -152,9 +152,9 @@ private:
     std::unordered_map<std::thread::id, LocalQueueType*> all_local_queues_;
     mutable std::mutex all_queues_mutex_;
 
-    const size_t local_threshold_;      // 局部队列触发合并的阈值
-    const size_t max_steal_;            // 批量窃取的最大数量
-    const std::chrono::milliseconds wait_timeout_;  // 等待超时时间
+     size_t local_threshold_;      // 局部队列触发合并的阈值
+     size_t max_steal_;            // 批量窃取的最大数量
+     std::chrono::milliseconds wait_timeout_;  // 等待超时时间
     Compare comp_;
 
 public:
@@ -399,7 +399,7 @@ public:
             if (id == std::this_thread::get_id()) continue;
             if (!queue->empty_quick())
             {
-                std::lock_guard<std::mutex> lock(queue->mutex);
+                std::lock_guard<std::recursive_mutex> lock(queue->mutex);
                 count += queue->queue.size();
             }
         }
@@ -427,7 +427,7 @@ private:
     {
         if (!local_queue_) return;
 
-        std::lock_guard<std::mutex> lock(local_queue_->mutex);
+        std::lock_guard<std::recursive_mutex> lock(local_queue_->mutex);
         if (local_queue_->queue.size() >= local_threshold_)
         {
             std::lock_guard<std::mutex> global_lock(global_mutex_);
@@ -514,7 +514,7 @@ private:
                 // 将剩余窃取的元素放入自己的局部队列
                 if (local_queue_)
                 {
-                    std::lock_guard<std::mutex> lock(local_queue_->mutex);
+                    std::lock_guard<std::recursive_mutex> lock(local_queue_->mutex);
                     while (!stolen_elements.empty())
                     {
                         local_queue_->queue.push(stolen_elements.top());
