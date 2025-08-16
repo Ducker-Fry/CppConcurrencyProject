@@ -31,13 +31,14 @@ void test_single_thread()
 void test_multi_thread()
 {
     std::cout << "=== Multi Threads Test Start ===" << std::endl;
-    const int PRODUCERS = 2;    // 4个生产者
+    const int PRODUCERS = 2;    // 2个生产者
     const int CONSUMERS = 2;    // 2个消费者
-    const int ITEMS_PER_PRODUCER = 5;  // 每个生产者生成100个元素
+    const int ITEMS_PER_PRODUCER = 5;  // 每个生产者生成5个元素
     const int TOTAL_ITEMS = PRODUCERS * ITEMS_PER_PRODUCER;
 
     HierarchicalPriorityQueue<int> hpq(10, 5);  // 局部阈值10，最多窃取5个
     std::atomic<int> items_processed(0);        // 已处理的元素数量
+    std::atomic<bool> producers_done(false);    // 生产者完成标志
     std::vector<int> results;                   // 存储消费结果
     std::mutex results_mutex;                   // 保护结果向量的锁
 
@@ -51,24 +52,39 @@ void test_multi_thread()
             // 模拟工作负载
             std::this_thread::yield();
         }
-        };
+    };
 
     // 消费者线程：弹出元素并验证优先级
     auto consumer = [&](int consumer_id) {
-        while (items_processed < TOTAL_ITEMS)
+        // 当还有元素未处理或生产者还在工作时继续消费
+        while (items_processed < TOTAL_ITEMS || !producers_done)
         {
-            int val = hpq.wait_and_pop();
+            // 尝试弹出元素，设置超时防止永久阻塞
+            std::optional<int> val = hpq.try_pop();
+            if (val)
             {
-                std::lock_guard<std::mutex> lock(results_mutex);
-                std::cout << "value: " << val << std::endl;
-                results.push_back(val);
-                items_processed++;
-                std::cout << items_processed << " items processed by consumer " << consumer_id << std::endl;
+                {   
+                    std::lock_guard<std::mutex> lock(results_mutex);
+                    std::cout << "value: " << *val << std::endl;
+                    results.push_back(*val);
+                    items_processed++;
+                    std::cout << items_processed << " items processed by consumer " << consumer_id << std::endl;
+                }
+                // 模拟工作负载
+                std::this_thread::yield();
             }
-            // 模拟工作负载
-            std::this_thread::yield();
+            else if (producers_done && items_processed >= TOTAL_ITEMS)
+            {
+                // 所有生产者已完成且所有元素已处理，退出循环
+                break;
+            }
+            else
+            {
+                // 短暂休眠避免CPU占用过高
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
         }
-        };
+    };
 
     // 启动线程
     std::vector<std::thread> producers;
@@ -83,8 +99,12 @@ void test_multi_thread()
         consumers.emplace_back(consumer, i);
     }
 
-    // 等待所有线程完成
+    // 等待所有生产者完成
     for (auto& t : producers) t.join();
+    // 标记生产者已完成
+    producers_done = true;
+
+    // 等待所有消费者完成
     for (auto& t : consumers) t.join();
 
     // 验证结果：元素总数正确

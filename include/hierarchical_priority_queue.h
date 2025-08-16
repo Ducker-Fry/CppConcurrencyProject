@@ -500,7 +500,7 @@ private:
             // 尝试批量窃取
             {
                 std::lock_guard<std::recursive_mutex> lock(queue->mutex);
-                size_t stolen = queue->steal(stolen_elements, max_steal_);
+                stolen = queue->steal(stolen_elements, max_steal_);
             }
 
             if (stolen > 0)
