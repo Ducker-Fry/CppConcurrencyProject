@@ -176,7 +176,7 @@ public:
             if (auto val = head_seg->pop())
             {
                 // 若段为空，尝试推进头部索引（供其他线程快速跳过空段）
-                if (head_seg->empty())
+                if (head_seg->empty()&&head_segment_ != tail_segment_)
                 {
                     head_segment_.compare_exchange_strong(current_head, current_head + 1);
                 }

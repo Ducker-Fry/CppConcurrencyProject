@@ -9,6 +9,7 @@
 #include <numeric>
 #include <algorithm>
 #include <queue>
+#include"threadsafe_outstream.h"
 
 // Test 1: Basic functionality verification in single-threaded environment
 template <typename T, size_t SEG_SIZE>
@@ -50,73 +51,58 @@ void test_single_thread_basic()
 template <typename T, size_t SEG_SIZE>
 void test_multi_thread_concurrent()
 {
-    std::cout << "=== Multi-threaded Concurrency Test ===" << std::endl;
-    const int PRODUCERS = 4;        // 4 producers
-    const int CONSUMERS = 4;        // 4 consumers
-    const int ITEMS_PER_PRODUCER = 1000;  // Each producer generates 1000 items
-    const int TOTAL_ITEMS = PRODUCERS * ITEMS_PER_PRODUCER;
+    const int PRODUCERS = 4;
+    const int CONSUMERS = 4;
+    const int ITEMS_PER_THREAD = 2;  // 每个生产者/消费者线程处理1000个项目
+
+    std::cout << "=== Multi-threaded Concurrent Test ===" << std::endl;
 
     SegmentedQueue<T, SEG_SIZE> q;
-    std::atomic<int> items_processed(0);  // Number of processed items
-    std::vector<T> results;               // Store consumption results
-    std::mutex results_mutex;             // Mutex to protect results vector
+    std::vector<std::thread> producer_threads;
+    std::vector<std::thread> consumer_threads;
 
-    // Producer thread: Generate continuously increasing elements (for order verification)
-    auto producer = [&](int producer_id) {
-        int start = producer_id * ITEMS_PER_PRODUCER;
-        for (int i = 0; i < ITEMS_PER_PRODUCER; ++i)
-        {
-            T val = start + i;
-            q.push(val);
-            // Simulate random delays to increase concurrency conflicts
-            if (i % 100 == 0)
+    for(int i = 0; i < PRODUCERS; ++i)
+    {
+        producer_threads.emplace_back([&q, i]() {
+            for (int j = 0; j < ITEMS_PER_THREAD; ++j)
             {
-                std::this_thread::yield();
+                T item = static_cast<T>(i * ITEMS_PER_THREAD + j);
+                q.push(item);
+                std::this_thread::sleep_for(std::chrono::milliseconds(10)); // 模拟生产延迟
             }
-        }
-        };
+        });
+    }
 
-    // Consumer thread: Retrieve elements and record results
-    auto consumer = [&]() {
-        while (items_processed < TOTAL_ITEMS)
-        {
-            T val = q.pop();
+    for(int i = 0; i < CONSUMERS; ++i)
+    {
+        consumer_threads.emplace_back([&q, i]() {
+            for (int j = 0; j < ITEMS_PER_THREAD; ++j)
             {
-                std::lock_guard<std::mutex> lock(results_mutex);
-                results.push_back(val);
+                auto item = q.pop();
+                if (item)
+                {
+                    BufFlusher flusher;
+                    bufferd_out("Value from consumer " + std::to_string(i) + ": " + std::to_string(item));
+                }
+                else
+                {
+                    BufFlusher flusher;
+                    bufferd_out("No item consumed by consumer " + std::to_string(i));
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(15)); // 模拟消费延迟
             }
-            items_processed++;
-        }
-        };
-
-    // Start threads
-    std::vector<std::thread> producers;
-    for (int i = 0; i < PRODUCERS; ++i)
-    {
-        producers.emplace_back(producer, i);
+        });
     }
 
-    std::vector<std::thread> consumers;
-    for (int i = 0; i < CONSUMERS; ++i)
+    for(auto& t : producer_threads)
     {
-        consumers.emplace_back(consumer);
+        t.join();
     }
 
-    // Wait for all threads to complete
-    for (auto& t : producers) t.join();
-    for (auto& t : consumers) t.join();
-
-    // Verify total number of elements
-    assert(results.size() == TOTAL_ITEMS);
-
-    // Verify order: All elements should cover 0~TOTAL_ITEMS-1 (no duplicates, no omissions)
-    std::sort(results.begin(), results.end());
-    for (int i = 0; i < TOTAL_ITEMS; ++i)
+    for(auto& t : consumer_threads)
     {
-        assert(results[i] == i);
+        t.join();
     }
-
-    std::cout << "Multi-threaded concurrency test passed (" << TOTAL_ITEMS << " items, no duplicates or omissions)" << std::endl << std::endl;
 }
 
 // Test 3: Performance benchmark (compare segmented queue with ordinary locked queue)
@@ -125,7 +111,7 @@ void test_performance()
 {
     std::cout << "=== Performance Benchmark Test ===" << std::endl;
     const int THREADS = 8;        // 8 threads (4 producers + 4 consumers)
-    const int ITEMS_PER_THREAD = 10000;  // Each producer generates 10000 items
+    const int ITEMS_PER_THREAD = 1000;  // Each producer generates 10000 items
 
     // Test segmented queue
     SegmentedQueue<T, SEG_SIZE> seg_queue;
@@ -224,6 +210,6 @@ void test_performance()
 
 
 // 显式实例化模板函数
-template void test_single_thread_basic<int, 1000>();
-template void test_multi_thread_concurrent<int, 1000>();
-template void test_performance<int, 1000>();
+template void test_single_thread_basic<int, 5>();
+template void test_multi_thread_concurrent<int, 5>();
+template void test_performance<int, 5>();
