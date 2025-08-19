@@ -17,7 +17,10 @@ project ("CppConcurrencyProject")
 # 查找 vcpkg 安装的 GTest，明确指定组件
 find_package(GTest REQUIRED )
 
-include_directories ("${CMAKE_CURRENT_SOURCE_DIR}/include/*/")
+# 修改这行包含目录配置
+include_directories ("${CMAKE_CURRENT_SOURCE_DIR}/include/")
+include_directories ("${CMAKE_CURRENT_SOURCE_DIR}/include/thread_safe_queue/")
+
 file(GLOB SOURCES "src/*.cpp")
 file(GLOB HEADERS "include/*.h" "include/*/*.h")
 

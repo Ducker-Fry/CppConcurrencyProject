@@ -1,7 +1,7 @@
 #include"test.h"
 #include<iostream>
 #include<vector>
-#include"threadsafe_outstream.h"
+#include"thread_safe_queue/threadsafe_outstream.h"
 
 
 void test()
