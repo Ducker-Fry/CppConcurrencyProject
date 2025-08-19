@@ -9,17 +9,30 @@ if (POLICY CMP0141)
   set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
 endif()
 
+set(CMAKE_TOOLCHAIN_FILE "E:/Software/Vcpkg/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING  "Vcpkg toolchain file")
+
 project ("CppConcurrencyProject")
 
-include_directories ("${CMAKE_CURRENT_SOURCE_DIR}/include")
+
+# 查找 vcpkg 安装的 GTest，明确指定组件
+find_package(GTest REQUIRED )
+
+include_directories ("${CMAKE_CURRENT_SOURCE_DIR}/include/*/")
+file(GLOB SOURCES "src/*.cpp")
+file(GLOB HEADERS "include/*.h" "include/*/*.h")
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 
 # 将源代码添加到此项目的可执行文件。
-add_executable (app   "src/test.cpp" "main.cpp" "include/threadsafestack.h" "include/queuefactory.h" "include/abstract_threadsafe_queue.h" "include/threadsafe_linked_queue.h" "include/bounded_threadsafe_queue.h" "include/threadsafe_outstream.h" "src/threadsafe_outstream.cpp" "include/lock_free_queue.h" "include/thread_safe_priority_queue.h" "include/hierarchical_priority_queue.h" "src/hpq_test.cpp" "include/hpq_test.h" "include/delay_queue.h" "include/test_delay_queue.h" "src/test_delay_queue.cpp" "include/segmented_queue.h" "include/test_segment_queue.h" "src/test_segment_queue.cpp" "include/batch_queue.h")
-target_link_directories(app PRIVATE "${CMAKE_SOURCE_DIR}/exec")
+add_executable (app    "main.cpp" ${SOURCES} ${HEADERS})
+target_link_libraries(app 
+
+    PRIVATE "${CMAKE_SOURCE_DIR}/exec"
+    PRIVATE GTest::gtest             # GTest 核心库
+    PRIVATE GTest::gtest_main         # 提供默认 main 函数（无需手动编写）
+)
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET app PROPERTY CXX_STANDARD 20)
