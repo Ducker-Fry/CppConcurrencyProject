@@ -128,7 +128,7 @@ void parallel_for_each_d(InputIt first, InputIt last, Func func)
 
     // 4. 定制工作线程函数
     auto worker = [&]() {
-        while (true)
+        while (done)
         {
             std::pair<InputIt, InputIt> task;
             {
@@ -141,6 +141,7 @@ void parallel_for_each_d(InputIt first, InputIt last, Func func)
                 task = task_queue.front();
                 task_queue.pop();
             }
+
             try
             {
                 std::for_each(task.first, task.second, func); // 执行任务

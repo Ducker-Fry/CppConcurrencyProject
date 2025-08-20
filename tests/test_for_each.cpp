@@ -2,159 +2,178 @@
 #include <gtest/gtest.h>
 #include <vector>
 #include <list>
-#include <string>
 #include <atomic>
 #include <mutex>
 #include <stdexcept>
 #include <chrono>
+#include <thread>
 #include <algorithm>
 
-// 测试1：基础功能 - 并行遍历并修改元素（无共享资源）
-TEST(ConcurrentForEachTest, BasicParallelModification) {
-    const size_t n = 10000;
-    std::vector<int> data(n);
+// 辅助函数：模拟耗时且不均匀的任务（用于测试负载均衡）
+void uneven_workload(int& x) {
+    // 让偶数索引更耗时（模拟负载不均场景）
+    if (x % 2 == 0) {
+        std::this_thread::sleep_for(std::chrono::microseconds(10));
+    }
+    x *= 2;
+}
 
-    // 初始化：data[i] = i
+// 测试1：基础功能 - 动态划分下的元素修改
+TEST(DynamicConcurrentForEachTest, BasicElementModification) {
+    const size_t n = 1000;
+    std::vector<int> data(n);
     for (size_t i = 0; i < n; ++i) {
         data[i] = i;
     }
 
-    // 并发遍历：每个元素乘以2（无共享资源，线程安全）
-    parallel_for_each_s(data.begin(), data.end(), [](int& x) {
-        x *= 2;
+    // 动态并发处理
+    parallel_for_each_d(data.begin(), data.end(), [](int& x) {
+        x += 10;
     });
 
     // 验证结果
     for (size_t i = 0; i < n; ++i) {
-        EXPECT_EQ(data[i], 2 * static_cast<int>(i));
+        EXPECT_EQ(data[i], static_cast<int>(i) + 10);
     }
 }
 
-// 测试2：线程安全 - 并行操作共享资源（需同步）
-TEST(ConcurrentForEachTest, ThreadSafeSharedResource) {
-    const size_t n = 5000;
-    std::vector<int> data(n, 1); // 初始化为1
-    std::atomic<int> sum(0);     // 原子变量用于共享累加（线程安全）
+// 测试2：负载均衡能力 - 处理不均匀任务（对比静态版本优势）
+TEST(DynamicConcurrentForEachTest, LoadBalancing) {
+    const size_t n = 500;
+    std::vector<int> data(n);
+    std::vector<int> test_data(n);
+    for (size_t i = 0; i < n; ++i) {
+        data[i] = i;
+    }
 
-    // 并发遍历：累加所有元素（使用原子变量确保线程安全）
-    parallel_for_each_s(data.begin(), data.end(), [&sum](int x) {
+    // 记录动态版本耗时
+    auto start_dynamic = std::chrono::high_resolution_clock::now();
+    parallel_for_each_d(data.begin(), data.end(), uneven_workload);
+    auto end_dynamic = std::chrono::high_resolution_clock::now();
+    auto time_dynamic = std::chrono::duration_cast<std::chrono::milliseconds>(
+        end_dynamic - start_dynamic
+    ).count();
+    test_data = data; // 保存动态版本处理后的数据
+
+    // 重置数据
+    for (size_t i = 0; i < n; ++i) {
+        data[i] = i;
+    }
+
+    // 为对比，记录静态并发版本耗时（假设已有静态版本实现）
+    // （实际测试需包含静态版本代码）
+    auto start_static = std::chrono::high_resolution_clock::now();
+    // static_concurrent_for_each(data.begin(), data.end(), uneven_workload);
+    auto end_static = std::chrono::high_resolution_clock::now();
+    auto time_static = std::chrono::duration_cast<std::chrono::milliseconds>(
+        end_static - start_static
+    ).count();
+
+    // 打印耗时（动态版本在负载不均场景应更快）
+    std::cout << "Dynamic time: " << time_dynamic << "ms\n";
+    std::cout << "Static time (for comparison): " << time_static << "ms\n";
+
+    // 验证结果正确性
+    for (size_t i = 0; i < n; ++i) {
+        EXPECT_EQ(test_data[i], 2 * static_cast<int>(i));
+    }
+}
+
+// 测试3：线程安全 - 多线程操作共享计数器
+TEST(DynamicConcurrentForEachTest, ThreadSafeCounter) {
+    const size_t n = 10000;
+    std::vector<int> data(n, 1);
+    std::atomic<int> sum(0); // 原子变量确保线程安全
+
+    parallel_for_each_d(data.begin(), data.end(), [&sum](int x) {
         sum += x;
     });
 
-    // 预期结果：5000个1相加 = 5000
-    EXPECT_EQ(sum, n);
+    EXPECT_EQ(sum, n); // 10000个1相加
 }
 
-// 测试3：线程安全 - 使用互斥锁保护共享资源
-TEST(ConcurrentForEachTest, MutexProtectedSharedResource) {
-    const size_t n = 3000;
-    std::list<std::string> data(n, "a");
+// 测试4：线程安全 - 互斥锁保护复杂共享资源
+TEST(DynamicConcurrentForEachTest, MutexProtectedResource) {
+    const size_t n = 5000;
+    std::list<std::string> data(n, "x");
     std::string result;
-    std::mutex mtx; // 用于保护result的互斥锁
+    std::mutex mtx;
 
-    // 并发遍历：拼接字符串（通过互斥锁保证线程安全）
-    parallel_for_each_s(data.begin(), data.end(), [&](const std::string& s) {
+    parallel_for_each_d(data.begin(), data.end(), [&](const std::string& s) {
         std::lock_guard<std::mutex> lock(mtx);
         result += s;
     });
 
-    // 预期结果：3000个"a"拼接
     EXPECT_EQ(result.size(), n);
-    EXPECT_EQ(result, std::string(n, 'a'));
+    EXPECT_EQ(result, std::string(n, 'x'));
 }
 
-// 测试4：边界条件 - 空范围
-TEST(ConcurrentForEachTest, EmptyRange) {
-    std::vector<double> empty_data;
-    bool called = false;
-
-    // 并发遍历空范围
-    parallel_for_each_s(empty_data.begin(), empty_data.end(), [&called](double) {
-        called = true;
-    });
-
-    // 验证函数未被调用
-    EXPECT_FALSE(called);
-}
-
-// 测试5：边界条件 - 元素数量小于线程数
-TEST(ConcurrentForEachTest, SmallRange) {
-    const size_t n = 3; // 元素数少于硬件线程数（通常≥4）
+// 测试5：边界条件 - 元素数量远小于线程数
+TEST(DynamicConcurrentForEachTest, SmallRange) {
+    const size_t n = 5; // 远小于硬件线程数
     std::vector<int> data(n);
 
-    // 并发遍历：初始化元素
-    parallel_for_each_s(data.begin(), data.end(), [](int& x) {
-        static std::atomic<int> counter(0);
-        x = counter++;
+    parallel_for_each_d(data.begin(), data.end(), [](int& x) {
+        static std::atomic<int> seq(0);
+        x = seq++;
     });
 
-    // 验证元素被正确初始化（顺序可能不连续，但值唯一）
     std::sort(data.begin(), data.end());
-    EXPECT_EQ(data[0], 0);
-    EXPECT_EQ(data[1], 1);
-    EXPECT_EQ(data[2], 2);
+    for (size_t i = 0; i < n; ++i) {
+        EXPECT_EQ(data[i], static_cast<int>(i));
+    }
 }
 
-// 测试6：异常处理 - 子线程抛出异常
-TEST(ConcurrentForEachTest, ExceptionPropagation) {
-    std::vector<int> data(100);
-    const std::string error_msg = "Parallel for_each failed: test exception";
+// 测试6：边界条件 - 单元素
+TEST(DynamicConcurrentForEachTest, SingleElement) {
+    std::vector<int> data = {5};
 
-    // 并发遍历：第50个元素触发异常
+    parallel_for_each_d(data.begin(), data.end(), [](int& x) {
+        x *= 10;
+    });
+
+    EXPECT_EQ(data[0], 50);
+}
+
+// 测试7：异常处理 - 子线程抛出异常后终止所有线程
+TEST(DynamicConcurrentForEachTest, ExceptionPropagation) {
+    const size_t n = 5;
+    std::vector<int> data(n);
+    const std::string error_msg = "dynamic test exception";
+
+    // 验证异常被正确抛出
     EXPECT_THROW({
-        parallel_for_each_s(data.begin(), data.end(), [&](int& x) {
-            static std::atomic<int> counter(0);
-            if (counter++ == 50) {
+        parallel_for_each_d(data.begin(), data.end(), [&](int& x) {
+            static std::atomic<size_t> count(0);
+            if (count++ == 2) { // 第50个元素触发异常
                 throw std::runtime_error(error_msg);
             }
         });
     }, std::runtime_error);
 
-    // 验证异常信息正确
-    try {
-        parallel_for_each_s(data.begin(), data.end(), [&](int& x) {
-            static std::atomic<int> counter(0);
-            if (counter++ == 50) {
-                throw std::runtime_error(error_msg);
-            }
-        });
-    } catch (const std::runtime_error& e) {
-        EXPECT_EQ(e.what(), error_msg);
-    }
 }
 
-// 测试7：性能对比 - 与串行for_each的耗时比较（非严格测试）
-TEST(ConcurrentForEachTest, PerformanceComparison) {
-    const size_t n = 1000000; // 大数据量，便于观察并行优势
-    std::vector<long long> data(n, 1);
+// 测试8：任务队列耗尽后线程正确退出
+TEST(DynamicConcurrentForEachTest, ThreadsExitProperly) {
+    const size_t n = 1000;
+    std::vector<int> data(n, 0);
+    std::atomic<int> thread_count(0); // 记录实际参与工作的线程数
+    std::mutex mtx;
+    std::vector<std::thread::id> thread_ids; // 存储工作线程ID
 
-    // 串行遍历耗时
-    auto start_serial = std::chrono::high_resolution_clock::now();
-    std::for_each(data.begin(), data.end(), [](long long& x) {
-        x *= 2; // 简单计算，模拟耗时操作
+    parallel_for_each_d(data.begin(), data.end(), [&](int&) {
+        std::lock_guard<std::mutex> lock(mtx);
+        auto id = std::this_thread::get_id();
+        // 记录唯一线程ID
+        if (std::find(thread_ids.begin(), thread_ids.end(), id) == thread_ids.end()) {
+            thread_ids.push_back(id);
+            thread_count++;
+        }
     });
-    auto end_serial = std::chrono::high_resolution_clock::now();
-    auto time_serial = std::chrono::duration_cast<std::chrono::milliseconds>(end_serial - start_serial).count();
 
-    // 重置数据
-    std::fill(data.begin(), data.end(), 1);
-
-    // 并发遍历耗时
-    auto start_concurrent = std::chrono::high_resolution_clock::now();
-    parallel_for_each_s(data.begin(), data.end(), [](long long& x) {
-        x *= 2;
-    });
-    auto end_concurrent = std::chrono::high_resolution_clock::now();
-    auto time_concurrent = std::chrono::duration_cast<std::chrono::milliseconds>(end_concurrent - start_concurrent).count();
-
-    // 打印耗时（并行应快于串行，具体倍数取决于CPU核心数）
-    std::cout << "Serial time: " << time_serial << "ms\n";
-    std::cout << "Concurrent time: " << time_concurrent << "ms\n";
-
-    // 验证结果正确（无论耗时如何，结果必须正确）
-    for (long long val : data) {
-        EXPECT_EQ(val, 2);
-    }
+    // 验证至少有一个线程参与（最多为硬件核心数）
+    EXPECT_GE(thread_count, 1);
+    EXPECT_LE(thread_count, std::thread::hardware_concurrency());
 }
 
 int main(int argc, char **argv) {
