@@ -29,7 +29,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 
 # 将源代码添加到此项目的可执行文件。
-add_executable (app    "main.cpp" ${SOURCES} ${HEADERS} "include/parallel_algorithm/for_each.h" "tests/test_for_each.cpp")
+add_executable (app    "main.cpp" ${SOURCES} ${HEADERS} "include/parallel_algorithm/for_each.h" "tests/test_for_each.cpp" "include/parallel_algorithm/accumulate.h" "tests/test_accumulate.cpp")
 target_link_libraries(app 
 
     PRIVATE "${CMAKE_SOURCE_DIR}/exec"

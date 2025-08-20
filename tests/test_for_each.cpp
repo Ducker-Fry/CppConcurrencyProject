@@ -176,7 +176,3 @@ TEST(DynamicConcurrentForEachTest, ThreadsExitProperly) {
     EXPECT_LE(thread_count, std::thread::hardware_concurrency());
 }
 
-int main(int argc, char **argv) {
-    testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}
