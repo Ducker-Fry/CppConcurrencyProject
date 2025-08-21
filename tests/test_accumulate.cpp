@@ -5,6 +5,10 @@
 #include <string>
 #include <functional> // 用于std::multiplies等
 #include <numeric>    // 用于与标准库版本对比
+#include <chrono>
+#include <thread>
+#include <random>
+
 
 // 测试1：基础求和（使用默认加法操作）
 TEST(MyAccumulateTest, BasicSum)
@@ -129,8 +133,140 @@ TEST(MyAccumulateTest, CompareWithStdAccumulate)
         std::accumulate(data.begin(), data.end(), 1.0, std::multiplies<double>()));
 }
 
-int main(int argc, char** argv)
-{
+
+// 测试1：基础求和（与串行版本对比）
+TEST(ParallelAccumulateTest, BasicSum) {
+    std::vector<int> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    
+    // 并行求和（默认线程数）
+    int parallel_result = parallel_accumulate(data.begin(), data.end(), 0);
+    // 串行求和（标准库）
+    int serial_result = std::accumulate(data.begin(), data.end(), 0);
+    
+    EXPECT_EQ(parallel_result, serial_result);
+    EXPECT_EQ(parallel_result, 55); // 1+2+...+10=55
+}
+
+// 测试2：大数据量求和（验证并行效率和正确性）
+TEST(ParallelAccumulateTest, LargeDataSum) {
+    const size_t n = 10'000'000; // 1000万元素
+    std::vector<long long> data(n);
+    
+    // 生成随机数据
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<long long> dist(0, 99);
+    for (auto& x : data) {
+        x = dist(gen);
+    }
+    
+    // 并行计算
+    auto start_parallel = std::chrono::high_resolution_clock::now();
+    long long parallel_sum = parallel_accumulate(data.begin(), data.end(), 0LL);
+    auto time_parallel = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - start_parallel
+    ).count();
+    
+    // 串行计算（对比）
+    auto start_serial = std::chrono::high_resolution_clock::now();
+    long long serial_sum = std::accumulate(data.begin(), data.end(), 0LL);
+    auto time_serial = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - start_serial
+    ).count();
+    
+    // 验证结果一致
+    EXPECT_EQ(parallel_sum, serial_sum);
+    
+    // 打印性能数据（并行应快于串行）
+    std::cout << "\nLargeDataSum - Parallel time: " << time_parallel << "ms\n";
+    std::cout << "LargeDataSum - Serial time:   " << time_serial << "ms\n";
+    std::cout << "LargeDataSum - Speedup: " << static_cast<double>(time_serial) / time_parallel << "x\n";
+}
+
+// 测试3：自定义二元操作（乘法）
+TEST(ParallelAccumulateTest, CustomBinaryOp) {
+    std::vector<int> data = {2, 3, 4, 5};
+    
+    // 并行求积（初始值1，操作：乘法）
+    int parallel_product = parallel_accumulate(
+        data.begin(), data.end(), 1, std::multiplies<int>()
+    );
+    // 串行求积
+    int serial_product = std::accumulate(
+        data.begin(), data.end(), 1, std::multiplies<int>()
+    );
+    
+    EXPECT_EQ(parallel_product, serial_product);
+    EXPECT_EQ(parallel_product, 120); // 1*2*3*4*5=120
+}
+
+// 测试4：自定义类型（字符串拼接，验证可结合性）
+TEST(ParallelAccumulateTest, CustomType) {
+    std::vector<std::string> parts = {"a", "b", "c", "d", "e"};
+    
+    // 并行拼接（初始值为空字符串，操作：字符串加法）
+    std::string parallel_str = parallel_accumulate(
+        parts.begin(), parts.end(), std::string(), std::plus<std::string>()
+    );
+    // 串行拼接
+    std::string serial_str = std::accumulate(
+        parts.begin(), parts.end(), std::string(), std::plus<std::string>()
+    );
+    
+    EXPECT_EQ(parallel_str, serial_str);
+    EXPECT_EQ(parallel_str, "abcde");
+}
+
+// 测试5：边界条件（空范围）
+TEST(ParallelAccumulateTest, EmptyRange) {
+    std::vector<double> empty_data;
+    
+    // 空范围应返回初始值
+    double result = parallel_accumulate(empty_data.begin(), empty_data.end(), 3.14);
+    EXPECT_EQ(result, 3.14);
+}
+
+// 测试6：边界条件（元素数小于线程数）
+TEST(ParallelAccumulateTest, SmallRange) {
+    std::vector<int> data = {1, 2, 3}; // 3个元素，线程数可能为4或8
+    
+    int parallel_sum = parallel_accumulate(data.begin(), data.end(), 0);
+    int serial_sum = std::accumulate(data.begin(), data.end(), 0);
+    
+    EXPECT_EQ(parallel_sum, serial_sum);
+    EXPECT_EQ(parallel_sum, 6);
+}
+
+// 测试7：指定线程数（验证线程数控制）
+TEST(ParallelAccumulateTest, ExplicitThreadCount) {
+    std::vector<int> data(1000, 1); // 1000个1
+    
+    // 强制使用2个线程
+    int sum_2threads = parallel_accumulate(data.begin(), data.end(), 0, std::plus<int>(), 2);
+    // 强制使用1个线程（等价于串行）
+    int sum_1thread = parallel_accumulate(data.begin(), data.end(), 0, std::plus<int>(), 1);
+    
+    EXPECT_EQ(sum_2threads, 1000);
+    EXPECT_EQ(sum_1thread, sum_2threads);
+}
+
+// 测试8：不可结合操作（验证并行与串行可能不同，需用户保证可结合性）
+TEST(ParallelAccumulateTest, NonAssociativeOp) {
+    std::vector<int> data = {10, 5, 3};
+    // 减法是不可结合的：(10-5)-3 = 2，10-(5-3)=8
+    auto subtract = [](int a, int b) { return a - b; };
+    
+    int parallel_result = parallel_accumulate(data.begin(), data.end(), 0, subtract);
+    int serial_result = std::accumulate(data.begin(), data.end(), 0, subtract);
+    
+    // 注意：此处结果可能不同，因为减法不可结合
+    std::cout << "\nNonAssociativeOp - Parallel: " << parallel_result 
+              << ", Serial: " << serial_result << "\n";
+    // 不强制断言相等，仅验证程序能运行
+    SUCCEED();
+}
+
+int main(int argc, char **argv) {
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
