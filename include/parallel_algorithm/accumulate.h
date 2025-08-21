@@ -6,6 +6,37 @@
 #include <algorithm>
 #include <thread>
 #include <numeric>
+#include <string>
+
+// 1. 单位元获取模板（默认需要用户显式提供，或为标准操作特化）
+template <typename BinaryOp, typename T>
+struct identity_element
+{
+    // 若未找到特化，编译报错（提示用户提供单位元）
+    static_assert(std::is_same_v<BinaryOp, BinaryOp>,
+        "No identity element defined for this operation. Provide explicit identity.");
+    static T get() { return T(); }
+};
+
+// 2. 为标准操作提供单位元特化
+template <typename T>
+struct identity_element<std::plus<T>, T>
+{
+    static T get() { return T(0); } // 加法单位元：0
+};
+
+template <typename T>
+struct identity_element<std::multiplies<T>, T>
+{
+    static T get() { return T(1); } // 乘法单位元：1
+};
+
+template <>
+struct identity_element<std::plus<std::string>, std::string>
+{
+    static std::string get() { return ""; } // 字符串拼接单位元：空字符串
+};
+
 
 // 辅助模板：检测二元操作op是否可调用（C++11兼容版）
 template<typename T, typename ElementType, typename BinaryOp, typename = void>
@@ -86,22 +117,31 @@ T parallel_accumulate(InputIt first, InputIt last, T init, BinaryOp op)
     std::vector<T> results(num_threads);
     // 启动多个线程进行并行计算
     std::vector<std::thread> threads;
+    // 获取当前操作的单位元（局部初始值）
+    const T local_init = identity_element<BinaryOp, T>::get();
     for (unsigned i = 0; i < num_threads; ++i)
     {
         auto block_start = first + i * block_size;
         auto block_end = (i == num_threads - 1) ? last : block_start + block_size;
-        threads.emplace_back([block_start, block_end, &results, i, op]() 
+        threads.emplace_back([block_start, block_end, &results, i, op, local_init]()
             {
-                auto distance = std::distance(block_start, block_end);
-                if(distance == 1) results[i] = *block_start; // 只有一个元素，直接赋值
-                else if (distance  == 2)
+                /*
+                * 使用条件分支是因为T()作为初始值时，可能会导致结果不正确,例如如果T是int类型，初始值为0，乘法操作会导致结果为0
+auto distance = std::distance(block_start, block_end);
+                if (distance == 1) results[i] = *block_start; // 只有一个元素，直接赋值
+                else if (distance == 2)
                 {
                     results[i] = op(*block_start, *(block_start + 1)); // 两个元素，直接计算
                 }
                 else
                 {
-                    results[i] = std::accumulate(block_start + 1, block_end, *block_start, op); // 多于两个元素，使用std::accumulate
+                    results[i] = std::accumulate(block_start + 1, block_end, *block_start, op); // 多元素：用第一个元素作为初始值，累加剩余元素
                 }
+
+                */
+
+                //使用单位元模板优化
+                results[i] = std::accumulate(block_start, block_end, local_init, op);
             });
     }
     // 等待所有线程完成
