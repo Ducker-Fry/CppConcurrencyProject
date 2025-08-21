@@ -13,9 +13,8 @@ set(CMAKE_TOOLCHAIN_FILE "E:/Software/Vcpkg/vcpkg/scripts/buildsystems/vcpkg.cma
 
 project ("CppConcurrencyProject")
 
-
 # 查找 vcpkg 安装的 GTest，明确指定组件
-find_package(GTest REQUIRED )
+find_package(GTest REQUIRED)
 
 # 修改这行包含目录配置
 include_directories ("${CMAKE_CURRENT_SOURCE_DIR}/include/")
@@ -28,10 +27,15 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 
+# 启用测试
+enable_testing()
+
+# 引入 GoogleTest 提供的测试发现相关功能
+include(GoogleTest)
+
 # 将源代码添加到此项目的可执行文件。
 add_executable (app    "main.cpp" ${SOURCES} ${HEADERS} "include/parallel_algorithm/for_each.h" "tests/test_for_each.cpp" "include/parallel_algorithm/accumulate.h" "tests/test_accumulate.cpp")
 target_link_libraries(app 
-
     PRIVATE "${CMAKE_SOURCE_DIR}/exec"
     PRIVATE GTest::gtest             # GTest 核心库
     PRIVATE GTest::gtest_main         # 提供默认 main 函数（无需手动编写）
@@ -41,4 +45,5 @@ if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET app PROPERTY CXX_STANDARD 20)
 endif()
 
-# TODO: 如有需要，请添加测试并安装目标。
+# 注册测试用例，让 CMake 能发现测试
+gtest_discover_tests(app)
