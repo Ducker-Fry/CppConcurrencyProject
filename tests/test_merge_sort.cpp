@@ -261,6 +261,7 @@ TEST(ParallelMergeSortTest, StabilityWithDuplicates)
         {
             return value == other.value && index == other.index;
         }
+        StableType() = default; // 默认构造函数
     };
 
     // 测试数据：包含重复value，记录原始index
@@ -306,13 +307,13 @@ TEST(ParallelMergeSortTest, ThreadCountControl)
     thread_counter = 0;
     max_observed_threads = 0;
     parallel_merge_sort(data, 1000, 2); // 最大2线程
-    EXPECT_LE(max_observed_threads, 2) << "线程数超过限制（预期≤2）";
+    EXPECT_LE(max_observed_threads, 2) << "Number of threads exceeds limit (expected ≤2)";
 
-    // 测试2：限制最大线程数为4
+    // Test 2: Limit maximum number of threads to 4
     thread_counter = 0;
     max_observed_threads = 0;
-    parallel_merge_sort(data, 1000, 4); // 最大4线程
-    EXPECT_LE(max_observed_threads, 4) << "线程数超过限制（预期≤4）";
+    parallel_merge_sort(data, 1000, 4); // Maximum 4 threads
+    EXPECT_LE(max_observed_threads, 4) << "Number of threads exceeds limit (expected ≤4)";
 }
 
 // 测试5：性能对比（并行vs串行，大数据量）
@@ -346,20 +347,22 @@ TEST(ParallelMergeSortTest, PerformanceComparison)
     // 验证结果一致
     EXPECT_EQ(parallel_data, serial_data);
 
-    // 打印性能数据（非断言，仅作参考）
-    std::cout << "\n性能对比（" << n << "元素）:\n";
-    std::cout << "并行排序时间: " << time_parallel << "ms\n";
-    std::cout << "串行排序时间: " << time_serial << "ms\n";
-    std::cout << "加速比: " << static_cast<double>(time_serial) / time_parallel << "x\n";
+    // Print performance data (not an assertion, for reference only)
+    std::cout << "\nPerformance comparison (" << n << " elements):\n";
+    std::cout << "Parallel sort time: " << time_parallel << "ms\n";
+    std::cout << "Serial sort time: " << time_serial << "ms\n";
+    std::cout << "Speedup ratio: " << static_cast<double>(time_serial) / time_parallel << "x\n";
 
-    // 粗略验证并行有加速（至少1.2x，根据硬件可能调整）
+    // Roughly verify that parallel has acceleration (at least 1.2x, may be adjusted according to hardware)
     EXPECT_GT(static_cast<double>(time_serial) / time_parallel, 1.2)
-        << "并行排序未体现足够加速比";
+        << "Parallel sort does not show enough acceleration ratio";
 }
+/*
+这是我自己电脑运行的结果，供参考，实际结果会因硬件和环境不同而异：
+[ RUN      ] ParallelMergeSortTest.PerformanceComparison
 
-int main(int argc, char** argv)
-{
-    testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}
-
+Performance comparison (10000000 elements):
+Parallel sort time: 262ms
+Serial sort time: 1609ms
+Speedup ratio: 6.14122x
+*/

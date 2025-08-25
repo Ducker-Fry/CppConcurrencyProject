@@ -5,6 +5,7 @@
 #include <vector>
 #include <functional>
 #include <thread>
+#include <stdexcept>
 
 /*
 对于串行的merge_sort函数，要求自定义类型要实现<或者<=,==和默认的构造函数，否则无法实例化。
@@ -163,7 +164,9 @@ void merge_sort_parallel_impl(
     // 终止条件：子数组过小 或 无可用线程 → 切换串行
     if (n <= min_parallel_size || remaining_threads == 0)
     {
-        merge_sort_serial(first, last, buffer, comp);
+        // 切换到串行归并排序
+        //merge_sort_serial(first, last, buffer, comp);
+        std::sort(first, last, comp); // 直接用std::sort更高效
         return;
     }
 
@@ -182,11 +185,10 @@ void merge_sort_parallel_impl(
 
     // 当前线程处理右半部分：复用剩余线程名额
     merge_sort_parallel_impl(
-        mid, last, buffer, comp,
+        mid, last, buffer + (mid - first), comp,  // 修改buffer起始位置
         min_parallel_size,
         new_remaining  // 右半部分与左半部分共享剩余线程
     );
-
     // 等待左线程完成
     left_thread.join();
 
@@ -198,7 +200,7 @@ void merge_sort_parallel_impl(
 template <typename T, typename Compare = SafeComparator<T>>
 void parallel_merge_sort(
     std::vector<T>& arr,
-    size_t min_parallel_size = 1000,  // 最小并行粒度
+    size_t min_parallel_size = 10000,  // 最小并行粒度
     size_t max_threads = 0            // 最大线程数（0表示自动获取）
 )
 {
@@ -208,7 +210,7 @@ void parallel_merge_sort(
     // 自动计算最大线程数：默认使用CPU核心数，至少为1
     if (max_threads == 0)
     {
-        max_threads = std::thread::hardware_concurrency();
+        max_threads = std::thread::hardware_concurrency() - 1;
         if (max_threads == 0) max_threads = 1;  // 未知硬件时默认1线程
     }
     if (max_threads < 1)
@@ -217,7 +219,7 @@ void parallel_merge_sort(
     }
     else
     {
-        max_threads = std::min(max_threads, std::thread::hardware_concurrency());// 不超过数组大小
+        max_threads = std::min(max_threads, static_cast<size_t>(std::thread::hardware_concurrency()));// 不超过数组大小
     }
 
     std::vector<T> buffer(arr.size());  // 全局缓冲区
