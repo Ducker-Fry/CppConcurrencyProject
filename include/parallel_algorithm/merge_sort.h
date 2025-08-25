@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <vector>
 #include <functional>
+#include <thread>
 
 /*
 对于串行的merge_sort函数，要求自定义类型要实现<或者<=,==和默认的构造函数，否则无法实例化。
@@ -131,4 +132,101 @@ void merge_sort_iterative(std::vector<T>& arr,Comp comp)
             merge(arr.data() + left, arr.data() + mid, arr.data() + right, buffer.data() + left,comp);
         }
     }
+}
+
+
+
+// 并行归并排序实现（带比较器参数）
+// 串行归并排序（用于子数组过小或无可用线程时）
+template <typename T, typename Compare>
+void merge_sort_serial(T* first, T* last, T* buffer, Compare comp)
+{
+    const size_t n = last - first;
+    if (n <= 1) return;
+
+    T* mid = first + n / 2;
+    merge_sort_serial(first, mid, buffer, comp);
+    merge_sort_serial(mid, last, buffer, comp);
+    merge(first, mid, last, buffer, comp);
+}
+
+// 核心并行排序：带线程数控制
+template <typename T, typename Compare>
+void merge_sort_parallel_impl(
+    T* first, T* last, T* buffer, Compare comp,
+    size_t min_parallel_size,  // 最小并行粒度
+    size_t remaining_threads   // 剩余可用线程数
+)
+{
+    const size_t n = last - first;
+
+    // 终止条件：子数组过小 或 无可用线程 → 切换串行
+    if (n <= min_parallel_size || remaining_threads == 0)
+    {
+        merge_sort_serial(first, last, buffer, comp);
+        return;
+    }
+
+    T* mid = first + n / 2;
+
+    // 剩余线程数-1（分配1个线程给左半部分）
+    size_t new_remaining = remaining_threads - 1;
+
+    // 并行处理左半部分：创建线程，消耗1个可用名额
+    std::thread left_thread(
+        merge_sort_parallel_impl<T, Compare>,
+        first, mid, buffer, comp,
+        min_parallel_size,
+        new_remaining  // 左半部分可使用的线程数
+    );
+
+    // 当前线程处理右半部分：复用剩余线程名额
+    merge_sort_parallel_impl(
+        mid, last, buffer, comp,
+        min_parallel_size,
+        new_remaining  // 右半部分与左半部分共享剩余线程
+    );
+
+    // 等待左线程完成
+    left_thread.join();
+
+    // 合并结果
+    merge(first, mid, last, buffer, comp);
+}
+
+// 对外接口：自动计算最大线程数
+template <typename T, typename Compare = SafeComparator<T>>
+void parallel_merge_sort(
+    std::vector<T>& arr,
+    size_t min_parallel_size = 1000,  // 最小并行粒度
+    size_t max_threads = 0            // 最大线程数（0表示自动获取）
+)
+{
+    Compare comp;
+    if (arr.empty()) return;
+
+    // 自动计算最大线程数：默认使用CPU核心数，至少为1
+    if (max_threads == 0)
+    {
+        max_threads = std::thread::hardware_concurrency();
+        if (max_threads == 0) max_threads = 1;  // 未知硬件时默认1线程
+    }
+    if (max_threads < 1)
+    {
+        throw std::invalid_argument("max_threads must be at least 1");
+    }
+    else
+    {
+        max_threads = std::min(max_threads, std::thread::hardware_concurrency());// 不超过数组大小
+    }
+
+    std::vector<T> buffer(arr.size());  // 全局缓冲区
+
+    // 初始可用线程数为max_threads-1（预留当前线程）
+    merge_sort_parallel_impl(
+        arr.data(), arr.data() + arr.size(),
+        buffer.data(), comp,
+        min_parallel_size,
+        max_threads - 1  // 减去当前线程，剩余用于创建新线程
+    );
 }
