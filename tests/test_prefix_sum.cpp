@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <climits>
+#include <chrono>
 
 // 测试1：基础加法前缀和（int类型）
 TEST(GenericPrefixSumTest, BasicAdditionInt)
@@ -123,5 +124,160 @@ TEST(GenericPrefixSumTest, NullOperation)
         compute_prefix(arr, null_op, 0),
         std::invalid_argument
     );
+}
+
+
+// Test 1: Basic addition (integer type)
+TEST(ParallelPrefixTest, BasicAddition) {
+    std::vector<int> arr = {1, 2, 3, 4, 5};
+    auto op = [](int a, int b) { return a + b; };
+    const int identity = 0;
+
+    auto parallel_result = parallel_prefix(arr, op, identity);
+    auto sequential_result = sequential_prefix(arr, op, identity);
+
+    EXPECT_EQ(parallel_result, sequential_result);
+}
+
+// Test 2: Floating-point addition
+TEST(ParallelPrefixTest, FloatAddition) {
+    std::vector<float> arr = {1.5f, 2.5f, 3.5f, 4.5f};
+    auto op = [](float a, float b) { return a + b; };
+    const float identity = 0.0f;
+
+    auto parallel_result = parallel_prefix(arr, op, identity);
+    auto sequential_result = sequential_prefix(arr, op, identity);
+
+    for (size_t i = 0; i < parallel_result.size(); ++i) {
+        EXPECT_NEAR(parallel_result[i], sequential_result[i], 1e-6f);
+    }
+}
+
+// Test 3: Multiplication operation
+TEST(ParallelPrefixTest, Multiplication) {
+    std::vector<int> arr = {2, 3, 4, 5};
+    auto op = [](int a, int b) { return a * b; };
+    const int identity = 1;
+
+    auto parallel_result = parallel_prefix(arr, op, identity);
+    auto sequential_result = sequential_prefix(arr, op, identity);
+
+    EXPECT_EQ(parallel_result, sequential_result);
+}
+
+// Test 4: String concatenation
+TEST(ParallelPrefixTest, StringConcatenation) {
+    std::vector<std::string> arr = {"a", "b", "c", "d"};
+    auto op = [](const std::string& a, const std::string& b) { return a + b; };
+    const std::string identity = "";
+
+    auto parallel_result = parallel_prefix(arr, op, identity);
+    auto sequential_result = sequential_prefix(arr, op, identity);
+
+    EXPECT_EQ(parallel_result, sequential_result);
+}
+
+// Test 5: Maximum value operation
+TEST(ParallelPrefixTest, MaxOperation) {
+    std::vector<int> arr = {3, 1, 4, 2, 5};
+    auto op = [](int a, int b) { return std::max(a, b); };
+    const int identity = INT_MIN;
+
+    auto parallel_result = parallel_prefix(arr, op, identity);
+    auto sequential_result = sequential_prefix(arr, op, identity);
+
+    EXPECT_EQ(parallel_result, sequential_result);
+}
+
+// Test 6: Empty array (edge case)
+TEST(ParallelPrefixTest, EmptyArray) {
+    std::vector<double> arr;
+    auto op = [](double a, double b) { return a + b; };
+    const double identity = 0.0;
+
+    auto parallel_result = parallel_prefix(arr, op, identity);
+    EXPECT_EQ(parallel_result, std::vector<double>{identity});
+}
+
+// Test 7: Single element array (edge case)
+TEST(ParallelPrefixTest, SingleElement) {
+    std::vector<char> arr = {'x'};
+    auto op = [](char a, char b) { return a + b; };
+    const char identity = '\0';
+
+    auto parallel_result = parallel_prefix(arr, op, identity);
+    auto sequential_result = sequential_prefix(arr, op, identity);
+
+    EXPECT_EQ(parallel_result, sequential_result);
+}
+
+// Test 8: Small array (fewer elements than threads)
+TEST(ParallelPrefixTest, SmallArray) {
+    std::vector<int> arr = {10, 20}; // Assuming 4+ threads available
+    auto op = [](int a, int b) { return a + b; };
+    const int identity = 0;
+
+    auto parallel_result = parallel_prefix(arr, op, identity);
+    auto sequential_result = sequential_prefix(arr, op, identity);
+
+    EXPECT_EQ(parallel_result, sequential_result);
+}
+
+// Test 9: Custom type (point coordinates)
+TEST(ParallelPrefixTest, CustomType) {
+    struct Point {
+        int x;
+        int y;
+        Point(int x_ = 0, int y_ = 0) : x(x_), y(y_) {}
+        bool operator==(const Point& other) const {
+            return x == other.x && y == other.y;
+        }
+    };
+
+    std::vector<Point> arr = {Point(1,2), Point(3,4), Point(5,6)};
+    auto op = [](const Point& a, const Point& b) {
+        return Point(a.x + b.x, a.y + b.y);
+    };
+    const Point identity(0, 0);
+
+    auto parallel_result = parallel_prefix(arr, op, identity);
+    auto sequential_result = sequential_prefix(arr, op, identity);
+
+    EXPECT_EQ(parallel_result, sequential_result);
+}
+
+// Test 10: Performance comparison (large dataset)
+TEST(ParallelPrefixTest, PerformanceComparison) {
+    const size_t n = 10'000'000;
+    std::vector<long long> arr(n);
+    for (size_t i = 0; i < n; ++i) {
+        arr[i] = i % 100;
+    }
+
+    auto op = [](long long a, long long b) { return a + b; };
+    const long long identity = 0;
+
+    // Parallel version
+    auto start_parallel = std::chrono::high_resolution_clock::now();
+    auto parallel_result = parallel_prefix(arr, op, identity);
+    auto time_parallel = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - start_parallel
+    ).count();
+
+    // Sequential version
+    auto start_sequential = std::chrono::high_resolution_clock::now();
+    auto sequential_result = sequential_prefix(arr, op, identity);
+    auto time_sequential = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - start_sequential
+    ).count();
+
+    // Verify correctness
+    EXPECT_EQ(parallel_result, sequential_result);
+
+    // Output performance data
+    std::cout << "\nPerformance comparison (" << n << " elements):\n";
+    std::cout << "Parallel time: " << time_parallel << "ms\n";
+    std::cout << "Sequential time: " << time_sequential << "ms\n";
+    std::cout << "Speedup: " << static_cast<double>(time_sequential) / time_parallel << "x\n";
 }
 
