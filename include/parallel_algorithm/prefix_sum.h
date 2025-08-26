@@ -3,6 +3,9 @@
 #include <functional> // 用于std::function
 #include <stdexcept>
 #include <thread>
+#include <future>
+#include <atomic>
+#include <mutex>
 
 // 通用前缀和计算函数
 // 参数：
@@ -63,76 +66,93 @@ template <typename T, typename Operation>
 std::vector<T> parallel_prefix(const std::vector<T>& arr, Operation op, const T& identity) {
     if (arr.empty()) return { identity };
     
-    // 1. 确定线程数量
+    // 1. 确定线程数量和任务粒度
     size_t num_threads = std::thread::hardware_concurrency();
     if (num_threads == 0) num_threads = 2;
-    size_t min_per_thread = 25;
+    size_t min_per_thread = 32;
     size_t max_threads = (arr.size() + min_per_thread - 1) / min_per_thread;
     num_threads = std::min(num_threads, max_threads);
 
-    // 2. 划分数据块并预分配内存
-    size_t block_size = (arr.size() + num_threads - 1) / num_threads;
-    std::vector<std::vector<T>> chunks;
-    chunks.reserve(num_threads);
+    // 2. 使用连续内存布局
+    struct Block {
+        T* data;
+        size_t size;
+        T offset;
+    };
     
-    // 预分配所有块的内存
+    // 预分配连续内存
+    std::vector<T> all_data(arr.size() + num_threads); // 额外空间存储偏移
+    std::vector<Block> blocks;
+    blocks.reserve(num_threads);
+    
+    // 初始化块
+    size_t block_size = (arr.size() + num_threads - 1) / num_threads;
     for (size_t i = 0; i < num_threads; ++i) {
         size_t start = i * block_size;
         size_t end = std::min(start + block_size, arr.size());
         if (start < arr.size()) {
-            chunks.emplace_back(end - start + 1);
+            blocks.push_back({all_data.data() + start, end - start, identity});
         }
     }
 
-    std::vector<T> offset(num_threads, identity);
-    std::vector<std::thread> threads;
-
-    // 3. 计算每个块的前缀和
-    for (size_t i = 0; i < num_threads; ++i) {
-        threads.emplace_back([&, i] {
-            size_t start = i * block_size;
-            size_t end = std::min(start + block_size, arr.size());
-            if (start < arr.size()) {
-                auto& chunk = chunks[i];
-                chunk[0] = identity;
-                for (size_t j = start; j < end; ++j) {
-                    chunk[j - start + 1] = op(chunk[j - start], arr[j]);
-                }
-                offset[i] = chunk.back();
-            }
-        });
-    }
-
-    for (auto& t : threads) t.join();
-
-    // 4. 计算偏移量（使用并行归约）
-    for (size_t i = 1; i < num_threads; ++i) {
-        offset[i] = op(offset[i - 1], offset[i]);
-    }
-
-    // 5. 合并结果（使用并行处理）
-    for (size_t i = 1; i < num_threads; ++i) {
-        auto& chunk = chunks[i];
-        const T& prev_offset = offset[i - 1];
-        // 使用并行for循环处理每个块
-        #pragma omp parallel for
-        for (size_t j = 1; j < chunk.size(); ++j) {
-            chunk[j] = op(chunk[j], prev_offset);
+    // 3. 使用任务并行计算前缀和
+    std::vector<std::future<void>> futures;
+    std::mutex mtx;
+    
+    auto process_block = [&](size_t block_idx) {
+        auto& block = blocks[block_idx];
+        block.data[0] = arr[block.data - all_data.data()];
+        
+        // 计算块内前缀和
+        for (size_t i = 1; i < block.size; ++i) {
+            block.data[i] = op(block.data[i-1], arr[block.data - all_data.data() + i]);
         }
+        
+        // 使用原子操作更新偏移
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            block.offset = block.data[block.size - 1];
+        }
+    };
+
+    // 启动任务
+    for (size_t i = 0; i < blocks.size(); ++i) {
+        futures.push_back(std::async(std::launch::async, process_block, i));
     }
 
-    // 6. 拼接结果（使用连续内存）
+    // 等待所有任务完成
+    for (auto& f : futures) f.wait();
+
+    // 4. 计算全局偏移
+    std::vector<T> global_offsets(blocks.size());
+    for (size_t i = 1; i < blocks.size(); ++i) {
+        blocks[i].offset = op(blocks[i-1].offset, blocks[i].offset);
+    }
+
+    // 5. 合并结果
     std::vector<T> result;
     result.reserve(arr.size() + 1);
     result.push_back(identity);
     
-    // 预分配所有块的内存
-    for (const auto& chunk : chunks) {
-        if (!chunk.empty()) {
-            result.insert(result.end(), 
-                         std::make_move_iterator(chunk.begin() + 1), 
-                         std::make_move_iterator(chunk.end()));
+    // 处理第一个块
+    if (!blocks.empty()) {
+        result.insert(result.end(), blocks[0].data, blocks[0].data + blocks[0].size);
+    }
+    
+    // 处理剩余块
+    for (size_t i = 1; i < blocks.size(); ++i) {
+        auto& block = blocks[i];
+        T prev_offset = blocks[i-1].offset;
+        
+        // 计算当前块的结果
+        std::vector<T> block_result(block.size);
+        block_result[0] = op(block.data[0], prev_offset);
+        for (size_t j = 1; j < block.size; ++j) {
+            block_result[j] = op(block.data[j], prev_offset);
         }
+        
+        // 添加到最终结果
+        result.insert(result.end(), block_result.begin(), block_result.end());
     }
 
     return result;
