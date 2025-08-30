@@ -10,6 +10,7 @@ endif()
 set(CMAKE_TOOLCHAIN_FILE "E:/Software/Vcpkg/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING  "Vcpkg toolchain file")
 
 project ("CppConcurrencyProject")
+set(CMAKE_CXX_STANDARD 20)
 
 # 查找 vcpkg 安装的 GTest，明确指定组件
 find_package(GTest REQUIRED)
@@ -17,6 +18,8 @@ find_package(GTest REQUIRED)
 # 包含目录配置
 include_directories ("${CMAKE_CURRENT_SOURCE_DIR}/include/")
 include_directories ("${CMAKE_CURRENT_SOURCE_DIR}/include/thread_safe_queue/")
+include_directories ("${CMAKE_CURRENT_SOURCE_DIR}/include/matrix")
+
 
 # 查找主程序源文件
 file(GLOB MAIN_SOURCES "src/*.cpp")
